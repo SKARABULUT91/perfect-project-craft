@@ -31,7 +31,7 @@ const pageTitles: Record<PageId, string> = {
 
 export default function DashboardLayout() {
   const [activePage, setActivePage] = useState<PageId>('home');
-  const { isRunning, activeTask, setRunning, addLog } = useStore();
+  const { isRunning, activeTask, setRunning, addLog, twitterCredentials } = useStore();
 
   const handleStop = () => {
     setRunning(false);
@@ -101,17 +101,26 @@ export default function DashboardLayout() {
         {/* Header */}
         <div className="h-16 border-b border-border flex items-center justify-between px-8 bg-background/80 backdrop-blur-xl">
           <h1 className="text-lg font-semibold text-foreground">{pageTitles[activePage]}</h1>
-          <div className={cn(
-            'text-xs font-medium flex items-center gap-2 px-3 py-1.5 rounded-full',
-            isRunning
-              ? 'text-primary bg-primary/10'
-              : 'text-success bg-success/10'
-          )}>
+          <div className="flex items-center gap-4">
+            {twitterCredentials.isLoggedIn && (
+              <span className="text-xs text-muted-foreground">
+                🐦 @{twitterCredentials.username}
+              </span>
+            )}
             <div className={cn(
-              'w-2 h-2 rounded-full shadow-[0_0_8px_currentColor]',
-              isRunning ? 'bg-primary' : 'bg-success'
-            )} />
-            {isRunning ? `AKTİF: ${activeTask}` : 'Hazır'}
+              'text-xs font-medium flex items-center gap-2 px-3 py-1.5 rounded-full',
+              isRunning
+                ? 'text-primary bg-primary/10'
+                : twitterCredentials.isLoggedIn
+                  ? 'text-success bg-success/10'
+                  : 'text-warning bg-warning/10'
+            )}>
+              <div className={cn(
+                'w-2 h-2 rounded-full shadow-[0_0_8px_currentColor]',
+                isRunning ? 'bg-primary' : twitterCredentials.isLoggedIn ? 'bg-success' : 'bg-warning'
+              )} />
+              {isRunning ? `AKTİF: ${activeTask}` : twitterCredentials.isLoggedIn ? 'Hazır' : 'Bağlantı Yok'}
+            </div>
           </div>
         </div>
 

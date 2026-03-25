@@ -1,3 +1,9 @@
+export interface TwitterCredentials {
+  username: string;
+  password: string;
+  isLoggedIn: boolean;
+}
+
 export interface Stats {
   likes: number;
   rts: number;
