@@ -41,6 +41,7 @@ export const useStore = create<XMasterStore>()(
       blacklistUsers: '',
       whiteList: '',
       interactedUsers: [],
+      twitterCredentials: { username: '', password: '', isLoggedIn: false },
 
       updateStats: (partial) =>
         set((state) => ({ stats: { ...state.stats, ...partial } })),
