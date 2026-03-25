@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Stats, LogEntry, XMasterSettings } from './types';
+import type { Stats, LogEntry, XMasterSettings, TwitterCredentials } from './types';
 import { defaultSettings } from './types';
 
 interface XMasterStore {
@@ -12,6 +12,7 @@ interface XMasterStore {
   blacklistUsers: string;
   whiteList: string;
   interactedUsers: string[];
+  twitterCredentials: TwitterCredentials;
 
   updateStats: (stats: Partial<Stats>) => void;
   resetStats: () => void;
@@ -25,6 +26,8 @@ interface XMasterStore {
   clearInteractedUsers: () => void;
   exportData: () => string;
   importData: (json: string) => boolean;
+  loginTwitter: (username: string, password: string) => void;
+  logoutTwitter: () => void;
 }
 
 export const useStore = create<XMasterStore>()(
@@ -78,6 +81,17 @@ export const useStore = create<XMasterStore>()(
         }, null, 2);
       },
 
+      loginTwitter: (username, password) => {
+        set({ twitterCredentials: { username, password, isLoggedIn: true } });
+        get().addLog(`@${username} hesabıyla giriş yapıldı.`, 'success');
+      },
+
+      logoutTwitter: () => {
+        const username = get().twitterCredentials.username;
+        set({ twitterCredentials: { username: '', password: '', isLoggedIn: false } });
+        get().addLog(`@${username} hesabından çıkış yapıldı.`, 'info');
+      },
+
       importData: (json) => {
         try {
           const data = JSON.parse(json);
@@ -87,6 +101,7 @@ export const useStore = create<XMasterStore>()(
             ...(data.blacklistUsers !== undefined && { blacklistUsers: data.blacklistUsers }),
             ...(data.whiteList !== undefined && { whiteList: data.whiteList }),
             ...(data.interactedUsers && { interactedUsers: data.interactedUsers }),
+            ...(data.twitterCredentials && { twitterCredentials: data.twitterCredentials }),
           });
           return true;
         } catch {
@@ -102,6 +117,7 @@ export const useStore = create<XMasterStore>()(
         blacklistUsers: state.blacklistUsers,
         whiteList: state.whiteList,
         interactedUsers: state.interactedUsers,
+        twitterCredentials: state.twitterCredentials,
       }),
     }
   )
