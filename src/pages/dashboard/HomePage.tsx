@@ -3,19 +3,20 @@ import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { LogIn, LogOut, User, Lock, CheckCircle2 } from 'lucide-react';
+import { LogIn, LogOut, User, Lock, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 export default function HomePage() {
-  const { stats, resetStats, logs, addLog, twitterCredentials, loginTwitter, logoutTwitter } = useStore();
+  const { stats, resetStats, logs, addLog, clearLogs, twitterCredentials, loginTwitter, logoutTwitter } = useStore();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [logFilter, setLogFilter] = useState<'all' | 'error'>('all');
 
   const statItems = [
-    { label: 'BEĞENİ', value: stats.likes },
-    { label: 'RETWEET', value: stats.rts },
-    { label: 'TAKİP', value: stats.follows },
-    { label: 'T. BIRAKMA', value: stats.unfollows },
+    { label: 'BEĞENİ', value: stats.likes, emoji: '❤️' },
+    { label: 'RETWEET', value: stats.rts, emoji: '🔁' },
+    { label: 'TAKİP', value: stats.follows, emoji: '👤' },
+    { label: 'T. BIRAKMA', value: stats.unfollows, emoji: '👋' },
   ];
 
   const handleReset = () => {
@@ -30,19 +31,15 @@ export default function HomePage() {
     }
     setIsLoggingIn(true);
     addLog(`@${username.trim()} hesabına giriş yapılıyor...`, 'info');
-    
-    // Simulate login delay
     await new Promise((r) => setTimeout(r, 1500));
-    
     loginTwitter(username.trim(), password);
     setUsername('');
     setPassword('');
     setIsLoggingIn(false);
   };
 
-  const handleLogout = () => {
-    logoutTwitter();
-  };
+  const filteredLogs = logFilter === 'error' ? logs.filter((l) => l.type === 'error') : logs;
+  const errorCount = logs.filter((l) => l.type === 'error').length;
 
   return (
     <div>
@@ -53,7 +50,7 @@ export default function HomePage() {
         </div>
 
         {twitterCredentials.isLoggedIn ? (
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
                 <User className="w-5 h-5 text-primary" />
@@ -66,14 +63,8 @@ export default function HomePage() {
                 <span className="text-xs text-success">Bağlı — Otomasyon kullanıma hazır</span>
               </div>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-destructive/30 text-destructive hover:bg-destructive/10"
-              onClick={handleLogout}
-            >
-              <LogOut className="w-4 h-4 mr-1.5" />
-              Çıkış Yap
+            <Button variant="outline" size="sm" className="border-destructive/30 text-destructive hover:bg-destructive/10" onClick={() => logoutTwitter()}>
+              <LogOut className="w-4 h-4 mr-1.5" /> Çıkış Yap
             </Button>
           </div>
         ) : (
@@ -81,44 +72,21 @@ export default function HomePage() {
             <p className="text-xs text-muted-foreground mb-3">
               Otomasyon işlemlerini başlatmak için Twitter hesabınızla giriş yapın.
             </p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Kullanıcı adı"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="pl-9 bg-secondary border-border"
-                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                />
+                <Input placeholder="Kullanıcı adı" value={username} onChange={(e) => setUsername(e.target.value)} className="pl-9 bg-secondary border-border" onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
               </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  type="password"
-                  placeholder="Şifre"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="pl-9 bg-secondary border-border"
-                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                />
+                <Input type="password" placeholder="Şifre" value={password} onChange={(e) => setPassword(e.target.value)} className="pl-9 bg-secondary border-border" onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
               </div>
             </div>
-            <Button
-              className="w-full"
-              onClick={handleLogin}
-              disabled={isLoggingIn || !username.trim() || !password.trim()}
-            >
+            <Button className="w-full" onClick={handleLogin} disabled={isLoggingIn || !username.trim() || !password.trim()}>
               {isLoggingIn ? (
-                <>
-                  <span className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin mr-2" />
-                  Giriş yapılıyor...
-                </>
+                <><span className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin mr-2" />Giriş yapılıyor...</>
               ) : (
-                <>
-                  <LogIn className="w-4 h-4 mr-1.5" />
-                  Giriş Yap
-                </>
+                <><LogIn className="w-4 h-4 mr-1.5" />Giriş Yap</>
               )}
             </Button>
           </div>
@@ -126,44 +94,60 @@ export default function HomePage() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-6">
         {statItems.map((item) => (
-          <div key={item.label} className="bg-card border border-border rounded-lg p-5">
-            <div className="text-xs text-muted-foreground font-medium mb-2">{item.label}</div>
-            <div className="text-3xl font-bold text-foreground">{item.value}</div>
+          <div key={item.label} className="bg-card border border-border rounded-lg p-4 lg:p-5">
+            <div className="text-[10px] lg:text-xs text-muted-foreground font-medium mb-1.5 lg:mb-2">{item.emoji} {item.label}</div>
+            <div className="text-2xl lg:text-3xl font-bold text-foreground">{item.value}</div>
           </div>
         ))}
       </div>
 
-      <div className="flex justify-end mb-6">
-        <Button
-          variant="outline"
-          className="border-destructive/20 text-destructive bg-destructive/10 hover:bg-destructive/20"
-          onClick={handleReset}
-        >
+      <div className="flex justify-end mb-4">
+        <Button variant="outline" size="sm" className="border-destructive/20 text-destructive bg-destructive/10 hover:bg-destructive/20" onClick={handleReset}>
           İstatistikleri Sıfırla
         </Button>
       </div>
 
       {/* Logs */}
       <div className="bg-card border border-border rounded-lg p-4">
-        <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
-          📜 Son İşlemler (Loglar)
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+            📜 Son İşlemler (Loglar)
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant={logFilter === 'all' ? 'secondary' : 'ghost'} size="sm" className="text-xs h-7" onClick={() => setLogFilter('all')}>
+              Tümü
+            </Button>
+            <Button variant={logFilter === 'error' ? 'secondary' : 'ghost'} size="sm" className="text-xs h-7" onClick={() => setLogFilter('error')}>
+              <AlertTriangle className="w-3 h-3 mr-1 text-destructive" />
+              Hatalar {errorCount > 0 && `(${errorCount})`}
+            </Button>
+            <Button variant="ghost" size="sm" className="text-xs h-7 text-muted-foreground" onClick={clearLogs}>
+              Temizle
+            </Button>
+          </div>
         </div>
-        <div className="bg-background border border-border rounded-lg h-[350px] overflow-y-auto p-4 font-mono text-xs">
-          {logs.map((log) => (
-            <div key={log.id} className="flex gap-2.5 py-1 border-b border-card">
-              <span className="text-muted-foreground/50 min-w-[60px]">{log.time}</span>
-              <span className={cn(
-                log.type === 'info' && 'text-primary',
-                log.type === 'success' && 'text-success',
-                log.type === 'error' && 'text-destructive',
-                log.type === 'default' && 'text-muted-foreground',
-              )}>
-                {log.message}
-              </span>
+        <div className="bg-background border border-border rounded-lg h-[300px] lg:h-[350px] overflow-y-auto p-3 lg:p-4 font-mono text-[11px] lg:text-xs">
+          {filteredLogs.length === 0 ? (
+            <div className="text-muted-foreground/50 text-center py-8">
+              {logFilter === 'error' ? 'Hata kaydı yok.' : 'Log kaydı yok.'}
             </div>
-          ))}
+          ) : (
+            filteredLogs.map((log) => (
+              <div key={log.id} className="flex gap-2 py-1 border-b border-card">
+                <span className="text-muted-foreground/50 min-w-[50px] lg:min-w-[60px] flex-shrink-0">{log.time}</span>
+                <span className={cn(
+                  log.type === 'info' && 'text-primary',
+                  log.type === 'success' && 'text-success',
+                  log.type === 'error' && 'text-destructive',
+                  log.type === 'default' && 'text-muted-foreground',
+                )}>
+                  {log.type === 'error' && '⚠️ '}{log.message}
+                </span>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>
