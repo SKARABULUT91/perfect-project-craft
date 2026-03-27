@@ -7,7 +7,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from '@/hooks/use-toast';
 
 export default function AutomationPage() {
-  const { addLog, setRunning } = useStore();
+  const { addLog, setRunning, twitterCredentials } = useStore();
+  const isLoggedIn = twitterCredentials.isLoggedIn;
   const [feedCount, setFeedCount] = useState(20);
   const [feedDelay, setFeedDelay] = useState(4);
   const [manualTarget, setManualTarget] = useState('');
@@ -22,6 +23,11 @@ export default function AutomationPage() {
   const [cacheStatus, setCacheStatus] = useState('Durum: Yok');
 
   const demoAction = (action: string) => {
+    if (!isLoggedIn) {
+      toast({ title: 'Giriş Gerekli', description: 'Önce Genel Bakış sayfasından Twitter hesabınıza giriş yapın.', variant: 'destructive' });
+      addLog(`Hata: ${action} - Giriş yapılmamış.`, 'error');
+      return;
+    }
     addLog(`Demo: ${action} komutu gönderildi.`, 'info');
     setRunning(true, action);
     toast({ title: 'Demo Mod', description: `${action} - Gerçek Twitter bağlantısı gereklidir.` });
@@ -29,7 +35,14 @@ export default function AutomationPage() {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div className="space-y-6">
+      {!isLoggedIn && (
+        <div className="bg-warning/10 border border-warning/30 rounded-lg p-4 flex items-center gap-3">
+          <span className="text-warning text-lg">⚠️</span>
+          <p className="text-sm text-warning">Otomasyon işlemleri için önce <strong>Genel Bakış</strong> sayfasından Twitter hesabınıza giriş yapmalısınız.</p>
+        </div>
+      )}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Feed Interaction */}
       <div className="bg-card border border-border rounded-lg p-6">
         <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-5">
@@ -177,6 +190,7 @@ export default function AutomationPage() {
           ℹ️ Bu modda bot feed'deki tweetleri teker teker açar ve belirtilen sayı kadar altındaki yanıtlara beğeni/RT yapar.
         </p>
       </div>
+    </div>
     </div>
   );
 }

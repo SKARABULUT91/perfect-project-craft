@@ -20,10 +20,11 @@ const actionLabels: Record<string, string> = { like: '❤️ Beğeni', retweet: 
 const styleLabels: Record<string, string> = { mizahi: '😄 Mizahi', resmi: '📋 Resmi', samimi: '🤝 Samimi', pozitif: '✨ Pozitif' };
 
 export default function CampaignsPage() {
-  const { campaigns, addCampaign, updateCampaign, removeCampaign, addLog, setRunning } = useStore();
+  const { campaigns, addCampaign, updateCampaign, removeCampaign, addLog, setRunning, accounts } = useStore();
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState('');
   const [target, setTarget] = useState('');
+  const [selectedAccountId, setSelectedAccountId] = useState('');
   const [steps, setSteps] = useState<CampaignStep[]>(defaultSteps);
 
   const handleCreate = () => {
@@ -94,6 +95,19 @@ export default function CampaignsPage() {
               <Label>Hedef (Kullanıcı / Hashtag / Tweet)</Label>
               <Input placeholder="@user veya #hashtag" value={target} onChange={(e) => setTarget(e.target.value)} />
             </div>
+          </div>
+          <div className="mb-4">
+            <Label>Hesap Seçimi</Label>
+            <select
+              value={selectedAccountId}
+              onChange={(e) => setSelectedAccountId(e.target.value)}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="">Varsayılan (Aktif Hesap)</option>
+              {accounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>@{acc.username} {acc.isActive ? '(Aktif)' : ''}</option>
+              ))}
+            </select>
           </div>
 
           <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">İş Akışı Adımları</div>
