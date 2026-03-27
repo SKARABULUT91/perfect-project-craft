@@ -191,5 +191,6 @@ export default function AutomationPage() {
         </p>
       </div>
     </div>
+    </div>
   );
 }
