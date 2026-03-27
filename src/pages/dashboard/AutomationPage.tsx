@@ -35,7 +35,14 @@ export default function AutomationPage() {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div className="space-y-6">
+      {!isLoggedIn && (
+        <div className="bg-warning/10 border border-warning/30 rounded-lg p-4 flex items-center gap-3">
+          <span className="text-warning text-lg">⚠️</span>
+          <p className="text-sm text-warning">Otomasyon işlemleri için önce <strong>Genel Bakış</strong> sayfasından Twitter hesabınıza giriş yapmalısınız.</p>
+        </div>
+      )}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Feed Interaction */}
       <div className="bg-card border border-border rounded-lg p-6">
         <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-5">
