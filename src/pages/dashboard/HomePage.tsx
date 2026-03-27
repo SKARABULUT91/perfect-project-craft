@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import { LogIn, LogOut, User, Lock, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 export default function HomePage() {
-  const { stats, resetStats, logs, addLog, clearLogs, twitterCredentials, loginTwitter, logoutTwitter } = useStore();
+  const { stats, resetStats, logs, addLog, clearLogs, twitterCredentials, loginTwitter, logoutTwitter, settings } = useStore();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -90,6 +90,30 @@ export default function HomePage() {
               )}
             </Button>
           </div>
+        )}
+      </div>
+
+      {/* Rate Limit Indicator */}
+      <div className="bg-card border border-border rounded-lg p-4 mb-6">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">⏱️ Saatlik Oran Limiti</div>
+          <span className="text-xs text-muted-foreground">{stats.likes + stats.rts + stats.follows} / {settings.rateLimitPerHour}</span>
+        </div>
+        <div className="h-2 bg-secondary rounded-full overflow-hidden">
+          <div
+            className={cn(
+              'h-full rounded-full transition-all',
+              ((stats.likes + stats.rts + stats.follows) / settings.rateLimitPerHour) > 0.8
+                ? 'bg-destructive'
+                : ((stats.likes + stats.rts + stats.follows) / settings.rateLimitPerHour) > 0.5
+                  ? 'bg-warning'
+                  : 'bg-primary'
+            )}
+            style={{ width: `${Math.min(100, ((stats.likes + stats.rts + stats.follows) / settings.rateLimitPerHour) * 100)}%` }}
+          />
+        </div>
+        {((stats.likes + stats.rts + stats.follows) / settings.rateLimitPerHour) > 0.8 && (
+          <p className="text-[10px] text-destructive mt-1.5">⚠️ Oran limitine yaklaşıyorsunuz! Hesap güvenliği için yavaşlayın.</p>
         )}
       </div>
 

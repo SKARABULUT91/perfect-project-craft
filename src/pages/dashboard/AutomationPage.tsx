@@ -7,7 +7,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from '@/hooks/use-toast';
 
 export default function AutomationPage() {
-  const { addLog, setRunning } = useStore();
+  const { addLog, setRunning, twitterCredentials } = useStore();
+  const isLoggedIn = twitterCredentials.isLoggedIn;
   const [feedCount, setFeedCount] = useState(20);
   const [feedDelay, setFeedDelay] = useState(4);
   const [manualTarget, setManualTarget] = useState('');
@@ -22,6 +23,11 @@ export default function AutomationPage() {
   const [cacheStatus, setCacheStatus] = useState('Durum: Yok');
 
   const demoAction = (action: string) => {
+    if (!isLoggedIn) {
+      toast({ title: 'Giriş Gerekli', description: 'Önce Genel Bakış sayfasından Twitter hesabınıza giriş yapın.', variant: 'destructive' });
+      addLog(`Hata: ${action} - Giriş yapılmamış.`, 'error');
+      return;
+    }
     addLog(`Demo: ${action} komutu gönderildi.`, 'info');
     setRunning(true, action);
     toast({ title: 'Demo Mod', description: `${action} - Gerçek Twitter bağlantısı gereklidir.` });

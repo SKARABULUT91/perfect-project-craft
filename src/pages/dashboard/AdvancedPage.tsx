@@ -90,17 +90,31 @@ export default function AdvancedPage() {
           onChange={(v) => updateSettings({ keywordFilterEnabled: v })}
         />
         {settings.keywordFilterEnabled && (
-          <div className="mt-3 p-4 bg-black/20 rounded-lg border border-dashed border-border">
-            <Label className="text-primary font-semibold">🚫 Engellenecek Kelimeler (Her satıra bir kelime/öbek)</Label>
-            <Textarea
-              placeholder={"kazan\nhediye\ntakip et"}
-              value={settings.blacklistKeywords}
-              onChange={(e) => updateSettings({ blacklistKeywords: e.target.value })}
-              className="h-[100px] bg-background mt-2"
-            />
-            <p className="text-xs text-muted-foreground mt-2">
-              Bu kelimelerin geçtiği mentler otomatik olarak beğenilmeden geçilir.
-            </p>
+          <div className="mt-3 space-y-4">
+            <div className="p-4 bg-black/20 rounded-lg border border-dashed border-border">
+              <Label className="text-destructive font-semibold">🚫 Engellenecek Kelimeler (Her satıra bir kelime/öbek)</Label>
+              <Textarea
+                placeholder={"kazan\nhediye\ntakip et"}
+                value={settings.blacklistKeywords}
+                onChange={(e) => updateSettings({ blacklistKeywords: e.target.value })}
+                className="h-[100px] bg-background mt-2"
+              />
+              <p className="text-xs text-muted-foreground mt-2">
+                Bu kelimelerin geçtiği mentler otomatik olarak beğenilmeden geçilir.
+              </p>
+            </div>
+            <div className="p-4 bg-black/20 rounded-lg border border-dashed border-success/30">
+              <Label className="text-success font-semibold">✅ Beyaz Liste Kelimeleri (Sadece bunları hedefle)</Label>
+              <Textarea
+                placeholder={"teknoloji\nyazılım\nstartup"}
+                value={settings.whitelistKeywords}
+                onChange={(e) => updateSettings({ whitelistKeywords: e.target.value })}
+                className="h-[100px] bg-background mt-2"
+              />
+              <p className="text-xs text-muted-foreground mt-2">
+                Sadece bu kelimeleri içeren tweetlerle etkileşime geçilir. Boş bırakılırsa filtre uygulanmaz.
+              </p>
+            </div>
           </div>
         )}
 
