@@ -93,7 +93,7 @@ export default function DashboardLayout() {
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-primary-foreground font-bold text-lg">
               X
             </div>
-            <span className="text-foreground font-bold text-xl tracking-tight">X-Master</span>
+            <span className="text-foreground text-xl tracking-tight font-sans text-left font-bold mx-0 px-0">X - KODCUM</span>
           </div>
           <button className="lg:hidden text-muted-foreground hover:text-foreground" onClick={() => setSidebarOpen(false)}>
             <X className="w-5 h-5" />
