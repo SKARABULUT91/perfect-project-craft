@@ -1,5 +1,0 @@
-/api
-  ├─ server.js
-  ├─ routes/
-  ├─ services/
-  └─ controllers/
