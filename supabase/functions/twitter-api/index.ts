@@ -77,7 +77,7 @@ async function twitterRequest(
   }
 
   const headers: Record<string, string> = {
-    Authorization: generateOAuthHeader(method, url.split("?")[0]),
+    Authorization: await generateOAuthHeader(method, url.split("?")[0]),
     "Content-Type": "application/json",
   };
 
