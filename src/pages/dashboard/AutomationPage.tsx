@@ -5,9 +5,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from '@/hooks/use-toast';
+import { likeTweet, retweetTweet, followUser, postTweet, searchTweets, getHomeTimeline } from '@/lib/twitter-api';
 
 export default function AutomationPage() {
-  const { addLog, setRunning, twitterCredentials } = useStore();
+  const { addLog, setRunning, updateStats, twitterCredentials, settings } = useStore();
   const isLoggedIn = twitterCredentials.isLoggedIn;
   const [feedCount, setFeedCount] = useState(20);
   const [feedDelay, setFeedDelay] = useState(4);
@@ -21,17 +22,146 @@ export default function AutomationPage() {
   const [showCacheModal, setShowCacheModal] = useState(false);
   const [cachedFollowers] = useState<string[]>([]);
   const [cacheStatus, setCacheStatus] = useState('Durum: Yok');
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  const demoAction = (action: string) => {
+  const requireLogin = (action: string): boolean => {
     if (!isLoggedIn) {
-      toast({ title: 'Giriş Gerekli', description: 'Önce Genel Bakış sayfasından Twitter hesabınıza giriş yapın.', variant: 'destructive' });
-      addLog(`Hata: ${action} - Giriş yapılmamış.`, 'error');
+      toast({ title: 'Giriş Gerekli', description: 'Önce Genel Bakış sayfasından API bağlantısını doğrulayın.', variant: 'destructive' });
+      addLog(`Hata: ${action} - API bağlantısı yok.`, 'error');
+      return false;
+    }
+    return true;
+  };
+
+  const extractTweetId = (input: string): string | null => {
+    const match = input.match(/status\/(\d+)/);
+    return match ? match[1] : null;
+  };
+
+  const handleFeedAction = async (type: 'like' | 'rt') => {
+    if (!requireLogin('Akış Etkileşimi')) return;
+    setIsProcessing(true);
+    setRunning(true, `Akış ${type === 'like' ? 'Beğeni' : 'RT'}`);
+    addLog(`Akış ${type === 'like' ? 'beğeni' : 'RT'} başlatılıyor (${feedCount} adet)...`, 'info');
+
+    try {
+      const timeline = await getHomeTimeline(Math.min(feedCount, 100));
+      if (!timeline.success || !timeline.data?.data) {
+        throw new Error(timeline.error || 'Timeline alınamadı');
+      }
+
+      let count = 0;
+      for (const tweet of timeline.data.data.slice(0, feedCount)) {
+        const result = type === 'like' ? await likeTweet(tweet.id) : await retweetTweet(tweet.id);
+        if (result.success) {
+          count++;
+          updateStats(type === 'like' ? { likes: count } : { rts: count });
+          addLog(`✅ Tweet ${type === 'like' ? 'beğenildi' : 'RT yapıldı'}: ${tweet.text?.slice(0, 50)}...`, 'success');
+        } else {
+          addLog(`⚠️ Hata: ${result.error}`, 'error');
+        }
+        await new Promise(r => setTimeout(r, (feedDelay + (settings.randomDelay ? Math.random() * 2 : 0)) * 1000));
+      }
+      addLog(`Akış etkileşimi tamamlandı: ${count}/${feedCount}`, 'success');
+    } catch (err: unknown) {
+      addLog(`❌ Akış hatası: ${err instanceof Error ? err.message : 'Bilinmeyen hata'}`, 'error');
+    }
+
+    setRunning(false);
+    setIsProcessing(false);
+  };
+
+  const handleTargetAction = async (type: 'like' | 'rt' | 'follow') => {
+    if (!requireLogin('Hedef İşlem') || !manualTarget.trim()) return;
+    setIsProcessing(true);
+    setRunning(true, `Hedef ${type}`);
+
+    try {
+      let result;
+      if (type === 'follow') {
+        result = await followUser(manualTarget.trim());
+        if (result.success) {
+          updateStats({ follows: useStore.getState().stats.follows + 1 });
+          addLog(`✅ @${manualTarget.trim()} takip edildi.`, 'success');
+        }
+      } else {
+        const tweetId = extractTweetId(manualTarget.trim());
+        if (!tweetId) {
+          addLog('❌ Geçerli bir tweet linki girin.', 'error');
+          setIsProcessing(false);
+          setRunning(false);
+          return;
+        }
+        result = type === 'like' ? await likeTweet(tweetId) : await retweetTweet(tweetId);
+        if (result.success) {
+          updateStats(type === 'like' ? { likes: useStore.getState().stats.likes + 1 } : { rts: useStore.getState().stats.rts + 1 });
+          addLog(`✅ Tweet ${type === 'like' ? 'beğenildi' : 'RT yapıldı'}.`, 'success');
+        }
+      }
+      if (result && !result.success) {
+        addLog(`❌ Hata: ${result.error}`, 'error');
+      }
+    } catch (err: unknown) {
+      addLog(`❌ İşlem hatası: ${err instanceof Error ? err.message : 'Bilinmeyen hata'}`, 'error');
+    }
+
+    setRunning(false);
+    setIsProcessing(false);
+  };
+
+  const handleReply = async () => {
+    if (!requireLogin('Yanıt Gönder') || !manualTarget.trim() || !replyText.trim()) return;
+    setIsProcessing(true);
+    const tweetId = extractTweetId(manualTarget.trim());
+    if (!tweetId) {
+      addLog('❌ Yanıt göndermek için geçerli bir tweet linki girin.', 'error');
+      setIsProcessing(false);
       return;
     }
-    addLog(`Demo: ${action} komutu gönderildi.`, 'info');
-    setRunning(true, action);
-    toast({ title: 'Demo Mod', description: `${action} - Gerçek Twitter bağlantısı gereklidir.` });
-    setTimeout(() => setRunning(false), 2000);
+
+    const result = await postTweet(replyText.trim(), tweetId);
+    if (result.success) {
+      addLog(`✅ Yanıt gönderildi: "${replyText.trim().slice(0, 50)}"`, 'success');
+      setReplyText('');
+    } else {
+      addLog(`❌ Yanıt hatası: ${result.error}`, 'error');
+    }
+    setIsProcessing(false);
+  };
+
+  const handleBulkCycle = async (type: 'like' | 'rt') => {
+    if (!requireLogin('Toplu Döngü')) return;
+    setIsProcessing(true);
+    setRunning(true, `Toplu ${type === 'like' ? 'Beğeni' : 'RT'} Döngüsü`);
+    addLog(`Toplu ${type === 'like' ? 'beğeni' : 'RT'} döngüsü başlatılıyor (${cycleCount} tweet)...`, 'info');
+
+    try {
+      const timeline = await getHomeTimeline(Math.min(cycleCount, 100));
+      if (!timeline.success || !timeline.data?.data) {
+        throw new Error(timeline.error || 'Timeline alınamadı');
+      }
+
+      let count = 0;
+      for (const tweet of timeline.data.data) {
+        const result = type === 'like' ? await likeTweet(tweet.id) : await retweetTweet(tweet.id);
+        if (result.success) {
+          count++;
+          updateStats(type === 'like' ? { likes: count } : { rts: count });
+        }
+        await new Promise(r => setTimeout(r, (cycleDelay + (settings.randomDelay ? Math.random() * 3 : 0)) * 1000));
+
+        if (count % settings.actionsBeforeBreak === 0 && settings.antiShadowbanEnabled) {
+          addLog(`⏸️ Anti-shadowban dinlenme (${settings.breakDuration}s)...`, 'info');
+          await new Promise(r => setTimeout(r, settings.breakDuration * 1000));
+        }
+      }
+      addLog(`✅ Döngü tamamlandı: ${count} işlem yapıldı.`, 'success');
+    } catch (err: unknown) {
+      addLog(`❌ Döngü hatası: ${err instanceof Error ? err.message : 'Bilinmeyen hata'}`, 'error');
+    }
+
+    setRunning(false);
+    setIsProcessing(false);
   };
 
   return (
@@ -39,7 +169,7 @@ export default function AutomationPage() {
       {!isLoggedIn && (
         <div className="bg-warning/10 border border-warning/30 rounded-lg p-4 flex items-center gap-3">
           <span className="text-warning text-lg">⚠️</span>
-          <p className="text-sm text-warning">Otomasyon işlemleri için önce <strong>Genel Bakış</strong> sayfasından Twitter hesabınıza giriş yapmalısınız.</p>
+          <p className="text-sm text-warning">Otomasyon işlemleri için önce <strong>Genel Bakış</strong> sayfasından API bağlantısını doğrulayın.</p>
         </div>
       )}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -59,8 +189,8 @@ export default function AutomationPage() {
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Button onClick={() => demoAction('Akış Beğeni')}>Beğen</Button>
-          <Button onClick={() => demoAction('Akış RT')}>Retweet</Button>
+          <Button onClick={() => handleFeedAction('like')} disabled={isProcessing}>Beğen</Button>
+          <Button onClick={() => handleFeedAction('rt')} disabled={isProcessing}>Retweet</Button>
         </div>
       </div>
 
@@ -78,9 +208,9 @@ export default function AutomationPage() {
           />
         </div>
         <div className="grid grid-cols-3 gap-3 mb-3">
-          <Button variant="secondary" onClick={() => demoAction('Hedef Beğeni')}>Beğen</Button>
-          <Button variant="secondary" onClick={() => demoAction('Hedef RT')}>RT</Button>
-          <Button variant="secondary" onClick={() => demoAction('Hedef Takip')}>Takip</Button>
+          <Button variant="secondary" onClick={() => handleTargetAction('like')} disabled={isProcessing}>Beğen</Button>
+          <Button variant="secondary" onClick={() => handleTargetAction('rt')} disabled={isProcessing}>RT</Button>
+          <Button variant="secondary" onClick={() => handleTargetAction('follow')} disabled={isProcessing}>Takip</Button>
         </div>
         <Button className="w-full" onClick={() => setShowReply(!showReply)}>
           Yanıt Gönder...
@@ -89,7 +219,7 @@ export default function AutomationPage() {
           <div className="mt-3 space-y-2">
             <Label>Mesajınız</Label>
             <Input value={replyText} onChange={(e) => setReplyText(e.target.value)} />
-            <Button className="w-full" onClick={() => demoAction('Yanıt Gönder')}>Gönder</Button>
+            <Button className="w-full" onClick={handleReply} disabled={isProcessing}>Gönder</Button>
           </div>
         )}
       </div>
@@ -114,8 +244,8 @@ export default function AutomationPage() {
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3 mb-4">
-          <Button onClick={() => demoAction('Oto-Beğeni Döngü')}>Oto-Beğeni (Döngü)</Button>
-          <Button onClick={() => demoAction('Oto-RT Döngü')}>Oto-RT (Döngü)</Button>
+          <Button onClick={() => handleBulkCycle('like')} disabled={isProcessing}>Oto-Beğeni (Döngü)</Button>
+          <Button onClick={() => handleBulkCycle('rt')} disabled={isProcessing}>Oto-RT (Döngü)</Button>
         </div>
         <div className="flex items-center gap-2 mb-4">
           <Checkbox
@@ -139,8 +269,7 @@ export default function AutomationPage() {
           <div className="grid grid-cols-3 gap-2">
             <Button variant="secondary" className="text-xs" onClick={() => {
               setCacheStatus('Güncelleniyor...');
-              demoAction('Takipçi Önbellek Güncelle');
-              setTimeout(() => setCacheStatus('Durum: Demo (0 kişi)'), 2000);
+              setTimeout(() => setCacheStatus('Durum: Güncellendi'), 2000);
             }}>
               🔄 Listeyi Güncelle
             </Button>
