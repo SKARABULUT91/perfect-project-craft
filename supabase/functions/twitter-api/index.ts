@@ -40,8 +40,16 @@ async function generateOAuthHeader(
   const baseString = `${method.toUpperCase()}&${encodeURIComponent(url)}&${encodeURIComponent(paramString)}`;
   const signingKey = `${encodeURIComponent(consumerSecret)}&${encodeURIComponent(accessTokenSecret)}`;
 
-  const signatureBytes = hmac("sha1", signingKey, baseString);
-  const signature = btoa(String.fromCharCode(...new Uint8Array(signatureBytes as ArrayBuffer)));
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(signingKey),
+    { name: "HMAC", hash: "SHA-1" },
+    false,
+    ["sign"]
+  );
+  const signatureBytes = await crypto.subtle.sign("HMAC", key, encoder.encode(baseString));
+  const signature = base64Encode(new Uint8Array(signatureBytes));
 
   const authParams = {
     ...oauthParams,
