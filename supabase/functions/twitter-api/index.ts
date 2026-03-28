@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { hmac } from "https://deno.land/x/hmac@v2.0.1/mod.ts";
+import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,11 +8,11 @@ const corsHeaders = {
 
 const TWITTER_API = "https://api.x.com/2";
 
-function generateOAuthHeader(
+async function generateOAuthHeader(
   method: string,
   url: string,
   params: Record<string, string> = {}
-): string {
+): Promise<string> {
   const consumerKey = Deno.env.get("TWITTER_CONSUMER_KEY")!;
   const consumerSecret = Deno.env.get("TWITTER_CONSUMER_SECRET")!;
   const accessToken = Deno.env.get("TWITTER_ACCESS_TOKEN")!;
