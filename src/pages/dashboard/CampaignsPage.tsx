@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { Plus, Play, Pause, Trash2, Zap } from 'lucide-react';
 import type { Campaign, CampaignStep } from '@/lib/types';
+import { likeTweet, retweetTweet, followUser, postTweet, searchTweets } from '@/lib/twitter-api';
 
 const defaultSteps: CampaignStep[] = [
   { action: 'like', enabled: true, delay: 3 },
@@ -55,16 +56,43 @@ export default function CampaignsPage() {
     setSteps((prev) => prev.map((s, i) => i === idx ? { ...s, ...data } : s));
   };
 
-  const handleRun = (campaign: Campaign) => {
+  const handleRun = async (campaign: Campaign) => {
     updateCampaign(campaign.id, { status: 'running' });
     setRunning(true, `Kampanya: ${campaign.name}`);
     addLog(`"${campaign.name}" kampanyası başlatıldı.`, 'info');
-    toast({ title: 'Kampanya Başlatıldı', description: `${campaign.name} — Demo mod aktif.` });
-    setTimeout(() => {
-      updateCampaign(campaign.id, { status: 'completed', completedActions: campaign.totalActions });
-      setRunning(false);
-      addLog(`"${campaign.name}" kampanyası tamamlandı.`, 'success');
-    }, 3000);
+    toast({ title: 'Kampanya Başlatıldı', description: `${campaign.name} çalışıyor...` });
+
+    try {
+      // Search for target tweets
+      const searchResult = await searchTweets(campaign.target, 10);
+      const tweets = searchResult.success && searchResult.data?.data ? searchResult.data.data : [];
+      let completed = 0;
+
+      for (const tweet of tweets) {
+        for (const step of campaign.steps) {
+          if (step.action === 'like') {
+            await likeTweet(tweet.id);
+          } else if (step.action === 'retweet') {
+            await retweetTweet(tweet.id);
+          } else if (step.action === 'follow' && tweet.author_id) {
+            // follow requires username, skip if not available
+          } else if (step.action === 'comment' && step.commentText) {
+            await postTweet(step.commentText, tweet.id);
+          }
+          completed++;
+          updateCampaign(campaign.id, { completedActions: completed });
+          await new Promise(r => setTimeout(r, step.delay * 1000));
+        }
+      }
+
+      updateCampaign(campaign.id, { status: 'completed', completedActions: completed });
+      addLog(`"${campaign.name}" kampanyası tamamlandı: ${completed} işlem.`, 'success');
+    } catch (err: unknown) {
+      addLog(`❌ Kampanya hatası: ${err instanceof Error ? err.message : 'Bilinmeyen hata'}`, 'error');
+      updateCampaign(campaign.id, { status: 'paused' });
+    }
+
+    setRunning(false);
   };
 
   const statusConfig: Record<string, { label: string; class: string }> = {
