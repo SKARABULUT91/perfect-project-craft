@@ -3,14 +3,16 @@ import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { LogIn, LogOut, User, Lock, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { LogIn, LogOut, User, Lock, CheckCircle2, AlertTriangle, Shield } from 'lucide-react';
+import { verifyCredentials } from '@/lib/twitter-api';
 
 export default function HomePage() {
   const { stats, resetStats, logs, addLog, clearLogs, twitterCredentials, loginTwitter, logoutTwitter, settings } = useStore();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [logFilter, setLogFilter] = useState<'all' | 'error'>('all');
+  const [connectedUser, setConnectedUser] = useState<{ name: string; username: string; profileImage?: string } | null>(
+    twitterCredentials.isLoggedIn ? { name: '', username: twitterCredentials.username } : null
+  );
 
   const statItems = [
     { label: 'BEĞENİ', value: stats.likes, emoji: '❤️' },
@@ -24,18 +26,33 @@ export default function HomePage() {
     addLog('İstatistikler başarıyla sıfırlandı.', 'success');
   };
 
-  const handleLogin = async () => {
-    if (!username.trim() || !password.trim()) {
-      addLog('Kullanıcı adı ve şifre boş bırakılamaz.', 'error');
-      return;
-    }
+  const handleConnect = async () => {
     setIsLoggingIn(true);
-    addLog(`@${username.trim()} hesabına giriş yapılıyor...`, 'info');
-    await new Promise((r) => setTimeout(r, 1500));
-    loginTwitter(username.trim(), password);
-    setUsername('');
-    setPassword('');
+    addLog('Twitter API bağlantısı doğrulanıyor...', 'info');
+
+    const result = await verifyCredentials();
+
+    if (result.success && result.data) {
+      const user = result.data.data;
+      loginTwitter(user.username, '');
+      setConnectedUser({
+        name: user.name,
+        username: user.username,
+        profileImage: user.profile_image_url,
+      });
+      addLog(`✅ @${user.username} hesabı başarıyla bağlandı. (${user.public_metrics?.followers_count || 0} takipçi)`, 'success');
+    } else {
+      addLog(`❌ Bağlantı hatası: ${result.error || 'Bilinmeyen hata'}`, 'error');
+    }
+
     setIsLoggingIn(false);
+  };
+
+  const handleDisconnect = () => {
+    const username = twitterCredentials.username;
+    logoutTwitter();
+    setConnectedUser(null);
+    addLog(`@${username} bağlantısı kesildi.`, 'info');
   };
 
   const filteredLogs = logFilter === 'error' ? logs.filter((l) => l.type === 'error') : logs;
@@ -43,50 +60,46 @@ export default function HomePage() {
 
   return (
     <div>
-      {/* Twitter Login Section */}
+      {/* Twitter API Connection */}
       <div className="bg-card border border-border rounded-lg p-5 mb-6">
         <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 flex items-center gap-2">
-          🐦 Twitter Hesap Bağlantısı
+          <Shield className="w-4 h-4" /> Twitter API Bağlantısı
         </div>
 
-        {twitterCredentials.isLoggedIn ? (
+        {twitterCredentials.isLoggedIn && connectedUser ? (
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-                <User className="w-5 h-5 text-primary" />
+              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
+                {connectedUser.profileImage ? (
+                  <img src={connectedUser.profileImage} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <User className="w-5 h-5 text-primary" />
+                )}
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-foreground font-semibold text-sm">@{twitterCredentials.username}</span>
+                  <span className="text-foreground font-semibold text-sm">
+                    {connectedUser.name || `@${connectedUser.username}`}
+                  </span>
                   <CheckCircle2 className="w-4 h-4 text-success" />
                 </div>
-                <span className="text-xs text-success">Bağlı — Otomasyon kullanıma hazır</span>
+                <span className="text-xs text-success">API bağlantısı aktif — Otomasyon hazır</span>
               </div>
             </div>
-            <Button variant="outline" size="sm" className="border-destructive/30 text-destructive hover:bg-destructive/10" onClick={() => logoutTwitter()}>
-              <LogOut className="w-4 h-4 mr-1.5" /> Çıkış Yap
+            <Button variant="outline" size="sm" className="border-destructive/30 text-destructive hover:bg-destructive/10" onClick={handleDisconnect}>
+              <LogOut className="w-4 h-4 mr-1.5" /> Bağlantıyı Kes
             </Button>
           </div>
         ) : (
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground mb-3">
-              Otomasyon işlemlerini başlatmak için Twitter hesabınızla giriş yapın.
+              Twitter API anahtarlarınız backend'de güvenli şekilde saklanıyor. Bağlantıyı doğrulamak için aşağıdaki butona tıklayın.
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input placeholder="Kullanıcı adı" value={username} onChange={(e) => setUsername(e.target.value)} className="pl-9 bg-secondary border-border" onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
-              </div>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input type="password" placeholder="Şifre" value={password} onChange={(e) => setPassword(e.target.value)} className="pl-9 bg-secondary border-border" onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
-              </div>
-            </div>
-            <Button className="w-full" onClick={handleLogin} disabled={isLoggingIn || !username.trim() || !password.trim()}>
+            <Button className="w-full" onClick={handleConnect} disabled={isLoggingIn}>
               {isLoggingIn ? (
-                <><span className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin mr-2" />Giriş yapılıyor...</>
+                <><span className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin mr-2" />Doğrulanıyor...</>
               ) : (
-                <><LogIn className="w-4 h-4 mr-1.5" />Giriş Yap</>
+                <><LogIn className="w-4 h-4 mr-1.5" />API Bağlantısını Doğrula</>
               )}
             </Button>
           </div>

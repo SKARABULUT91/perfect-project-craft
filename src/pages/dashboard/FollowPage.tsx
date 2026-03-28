@@ -5,19 +5,131 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
+import { followUser, getFollowers, getFollowing } from '@/lib/twitter-api';
 
 export default function FollowPage() {
-  const { addLog, setRunning, whiteList, setWhiteList } = useStore();
+  const { addLog, setRunning, updateStats, whiteList, setWhiteList, settings, twitterCredentials } = useStore();
   const [targetUsername, setTargetUsername] = useState('');
   const [targetListType, setTargetListType] = useState('followers');
   const [targetFollowCount, setTargetFollowCount] = useState(50);
   const [userListInput, setUserListInput] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  const demoAction = (action: string) => {
-    addLog(`Demo: ${action}`, 'info');
-    setRunning(true, action);
-    toast({ title: 'Demo Mod', description: `${action} - Gerçek Twitter bağlantısı gereklidir.` });
-    setTimeout(() => setRunning(false), 2000);
+  const requireLogin = (): boolean => {
+    if (!twitterCredentials.isLoggedIn) {
+      toast({ title: 'Giriş Gerekli', description: 'Önce API bağlantısını doğrulayın.', variant: 'destructive' });
+      return false;
+    }
+    return true;
+  };
+
+  const handleTargetFollow = async () => {
+    if (!requireLogin() || !targetUsername.trim()) return;
+    setIsProcessing(true);
+    setRunning(true, 'Hedef Takip');
+    addLog(`@${targetUsername.trim()} ${targetListType === 'followers' ? 'takipçileri' : 'takip ettikleri'} çekiliyor...`, 'info');
+
+    try {
+      const listResult = targetListType === 'followers'
+        ? await getFollowers(targetUsername.trim(), targetFollowCount)
+        : await getFollowing(targetUsername.trim(), targetFollowCount);
+
+      if (!listResult.success || !listResult.data?.data) {
+        throw new Error(listResult.error || 'Liste alınamadı');
+      }
+
+      const users = listResult.data.data;
+      addLog(`${users.length} kullanıcı bulundu. Takip başlatılıyor...`, 'info');
+
+      let count = 0;
+      for (const user of users) {
+        const result = await followUser(user.username);
+        if (result.success) {
+          count++;
+          updateStats({ follows: useStore.getState().stats.follows + 1 });
+          addLog(`✅ @${user.username} takip edildi (${count}/${users.length})`, 'success');
+        } else {
+          addLog(`⚠️ @${user.username} takip edilemedi: ${result.error}`, 'error');
+        }
+        await new Promise(r => setTimeout(r, (3 + (settings.randomDelay ? Math.random() * 2 : 0)) * 1000));
+
+        if (count % settings.actionsBeforeBreak === 0 && settings.antiShadowbanEnabled) {
+          addLog(`⏸️ Anti-shadowban dinlenme (${settings.breakDuration}s)...`, 'info');
+          await new Promise(r => setTimeout(r, settings.breakDuration * 1000));
+        }
+      }
+      addLog(`✅ Takip tamamlandı: ${count}/${users.length}`, 'success');
+    } catch (err: unknown) {
+      addLog(`❌ Hata: ${err instanceof Error ? err.message : 'Bilinmeyen hata'}`, 'error');
+    }
+
+    setRunning(false);
+    setIsProcessing(false);
+  };
+
+  const handleCsvDownload = async () => {
+    if (!requireLogin() || !targetUsername.trim()) return;
+    setIsProcessing(true);
+    addLog(`@${targetUsername.trim()} listesi çekiliyor...`, 'info');
+
+    try {
+      const listResult = targetListType === 'followers'
+        ? await getFollowers(targetUsername.trim(), targetFollowCount)
+        : await getFollowing(targetUsername.trim(), targetFollowCount);
+
+      if (!listResult.success || !listResult.data?.data) {
+        throw new Error(listResult.error || 'Liste alınamadı');
+      }
+
+      const csv = ['username,name,followers,verified']
+        .concat(listResult.data.data.map(u =>
+          `${u.username},${u.name},${u.public_metrics?.followers_count || 0},${u.verified || false}`
+        ))
+        .join('\n');
+
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${targetUsername.trim()}_${targetListType}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      addLog(`✅ CSV indirildi: ${listResult.data.data.length} kullanıcı`, 'success');
+    } catch (err: unknown) {
+      addLog(`❌ CSV hatası: ${err instanceof Error ? err.message : 'Bilinmeyen hata'}`, 'error');
+    }
+
+    setIsProcessing(false);
+  };
+
+  const handleListFollow = async () => {
+    if (!requireLogin() || !userListInput.trim()) return;
+    setIsProcessing(true);
+    setRunning(true, 'Liste Takip');
+
+    const usernames = userListInput
+      .split(/[,\n]/)
+      .map(u => u.trim().replace('@', ''))
+      .filter(Boolean);
+
+    addLog(`${usernames.length} kullanıcı takip edilecek...`, 'info');
+
+    let count = 0;
+    for (const username of usernames) {
+      const result = await followUser(username);
+      if (result.success) {
+        count++;
+        updateStats({ follows: useStore.getState().stats.follows + 1 });
+        addLog(`✅ @${username} takip edildi (${count}/${usernames.length})`, 'success');
+      } else {
+        addLog(`⚠️ @${username}: ${result.error}`, 'error');
+      }
+      await new Promise(r => setTimeout(r, (3 + (settings.randomDelay ? Math.random() * 2 : 0)) * 1000));
+    }
+
+    addLog(`✅ Liste takip tamamlandı: ${count}/${usernames.length}`, 'success');
+    setRunning(false);
+    setIsProcessing(false);
   };
 
   return (
@@ -48,10 +160,10 @@ export default function FollowPage() {
             <Input type="number" value={targetFollowCount} onChange={(e) => setTargetFollowCount(+e.target.value)} />
           </div>
         </div>
-        <Button className="w-full mb-2" onClick={() => demoAction('Hedef Takip')}>
+        <Button className="w-full mb-2" onClick={handleTargetFollow} disabled={isProcessing}>
           Otomatik Takip Başlat
         </Button>
-        <Button variant="secondary" className="w-full" onClick={() => demoAction('CSV İndir')}>
+        <Button variant="secondary" className="w-full" onClick={handleCsvDownload} disabled={isProcessing}>
           Listeyi Çek & İndir (CSV)
         </Button>
       </div>
@@ -70,7 +182,7 @@ export default function FollowPage() {
             className="h-[100px] resize-none"
           />
         </div>
-        <Button className="w-full" onClick={() => demoAction('Liste Takip')}>
+        <Button className="w-full" onClick={handleListFollow} disabled={isProcessing}>
           Listeyi Takip Etmeye Başla
         </Button>
       </div>
