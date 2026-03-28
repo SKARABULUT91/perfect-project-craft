@@ -1,0 +1,6 @@
+fastapi==0.104.1
+uvicorn==0.24.0
+playwright==1.42.0
+playwright-stealth==1.0.6
+twocaptcha-python==0.7.5
+python-dotenv==1.0.0
