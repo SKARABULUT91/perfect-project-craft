@@ -1,6 +1,0 @@
-api/
-  services/
-    twitterService.js
-  routes/
-    verify.js
-  server.js
