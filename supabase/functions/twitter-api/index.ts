@@ -1,9 +1,9 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
 const TWITTER_API = "https://api.x.com/2";
@@ -13,10 +13,14 @@ async function generateOAuthHeader(
   url: string,
   params: Record<string, string> = {}
 ): Promise<string> {
-  const consumerKey = Deno.env.get("TWITTER_CONSUMER_KEY")!;
-  const consumerSecret = Deno.env.get("TWITTER_CONSUMER_SECRET")!;
-  const accessToken = Deno.env.get("TWITTER_ACCESS_TOKEN")!;
-  const accessTokenSecret = Deno.env.get("TWITTER_ACCESS_TOKEN_SECRET")!;
+  const consumerKey = Deno.env.get("TWITTER_CONSUMER_KEY");
+  const consumerSecret = Deno.env.get("TWITTER_CONSUMER_SECRET");
+  const accessToken = Deno.env.get("TWITTER_ACCESS_TOKEN");
+  const accessTokenSecret = Deno.env.get("TWITTER_ACCESS_TOKEN_SECRET");
+
+  if (!consumerKey || !consumerSecret || !accessToken || !accessTokenSecret) {
+    throw new Error("Twitter API credentials not configured");
+  }
 
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const nonce = crypto.randomUUID().replace(/-/g, "");
@@ -49,7 +53,8 @@ async function generateOAuthHeader(
     ["sign"]
   );
   const signatureBytes = await crypto.subtle.sign("HMAC", key, encoder.encode(baseString));
-  const signature = base64Encode(new Uint8Array(signatureBytes));
+  const signatureArray = Array.from(new Uint8Array(signatureBytes));
+  const signature = btoa(String.fromCharCode(...signatureArray));
 
   const authParams = {
     ...oauthParams,
@@ -96,9 +101,12 @@ async function twitterRequest(
   return data;
 }
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, {
+      status: 200,
+      headers: corsHeaders,
+    });
   }
 
   try {
@@ -304,14 +312,20 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({ success: true, data: result }), {
       status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json",
+      },
     });
   } catch (error: unknown) {
     console.error("Twitter API error:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
     return new Response(JSON.stringify({ success: false, error: message }), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json",
+      },
     });
   }
 });
