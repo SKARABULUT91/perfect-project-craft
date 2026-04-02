@@ -3,24 +3,29 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  "Access-Control-Allow-Headers":
+    "Content-Type, Authorization, X-Client-Info, Apikey, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 const TWITTER_API = "https://api.x.com/2";
 
-async function generateOAuthHeader(
-  method: string,
-  url: string,
-  params: Record<string, string> = {}
-): Promise<string> {
+function getCredentials() {
   const consumerKey = Deno.env.get("TWITTER_CONSUMER_KEY");
   const consumerSecret = Deno.env.get("TWITTER_CONSUMER_SECRET");
   const accessToken = Deno.env.get("TWITTER_ACCESS_TOKEN");
   const accessTokenSecret = Deno.env.get("TWITTER_ACCESS_TOKEN_SECRET");
-
   if (!consumerKey || !consumerSecret || !accessToken || !accessTokenSecret) {
     throw new Error("Twitter API credentials not configured");
   }
+  return { consumerKey, consumerSecret, accessToken, accessTokenSecret };
+}
+
+async function generateOAuthHeader(
+  method: string,
+  baseUrl: string,
+  queryParams: Record<string, string> = {}
+): Promise<string> {
+  const { consumerKey, consumerSecret, accessToken, accessTokenSecret } = getCredentials();
 
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const nonce = crypto.randomUUID().replace(/-/g, "");
@@ -34,14 +39,18 @@ async function generateOAuthHeader(
     oauth_version: "1.0",
   };
 
-  // For POST requests with JSON body, do NOT include body params in signature
-  const allParams = { ...oauthParams, ...params };
-  const sortedKeys = Object.keys(allParams).sort();
+  // For GET requests, include query params in signature. For POST with JSON body, do NOT.
+  const signatureParams: Record<string, string> =
+    method.toUpperCase() === "GET"
+      ? { ...oauthParams, ...queryParams }
+      : { ...oauthParams };
+
+  const sortedKeys = Object.keys(signatureParams).sort();
   const paramString = sortedKeys
-    .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(allParams[k])}`)
+    .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(signatureParams[k])}`)
     .join("&");
 
-  const baseString = `${method.toUpperCase()}&${encodeURIComponent(url)}&${encodeURIComponent(paramString)}`;
+  const baseString = `${method.toUpperCase()}&${encodeURIComponent(baseUrl)}&${encodeURIComponent(paramString)}`;
   const signingKey = `${encodeURIComponent(consumerSecret)}&${encodeURIComponent(accessTokenSecret)}`;
 
   const encoder = new TextEncoder();
@@ -53,14 +62,9 @@ async function generateOAuthHeader(
     ["sign"]
   );
   const signatureBytes = await crypto.subtle.sign("HMAC", key, encoder.encode(baseString));
-  const signatureArray = Array.from(new Uint8Array(signatureBytes));
-  const signature = btoa(String.fromCharCode(...signatureArray));
+  const signature = btoa(String.fromCharCode(...new Uint8Array(signatureBytes)));
 
-  const authParams = {
-    ...oauthParams,
-    oauth_signature: signature,
-  };
-
+  const authParams = { ...oauthParams, oauth_signature: signature };
   const header = Object.keys(authParams)
     .sort()
     .map((k) => `${encodeURIComponent(k)}="${encodeURIComponent(authParams[k])}"`)
@@ -75,14 +79,15 @@ async function twitterRequest(
   body?: Record<string, unknown>,
   queryParams?: Record<string, string>
 ) {
-  let url = `${TWITTER_API}${endpoint}`;
-  if (queryParams) {
+  const baseUrl = `${TWITTER_API}${endpoint}`;
+  let fullUrl = baseUrl;
+  if (queryParams && Object.keys(queryParams).length > 0) {
     const qs = new URLSearchParams(queryParams).toString();
-    url += `?${qs}`;
+    fullUrl = `${baseUrl}?${qs}`;
   }
 
   const headers: Record<string, string> = {
-    Authorization: await generateOAuthHeader(method, url.split("?")[0]),
+    Authorization: await generateOAuthHeader(method, baseUrl, queryParams || {}),
     "Content-Type": "application/json",
   };
 
@@ -91,121 +96,101 @@ async function twitterRequest(
     options.body = JSON.stringify(body);
   }
 
-  const response = await fetch(url, options);
+  console.log(`Twitter API ${method} ${fullUrl}`);
+  const response = await fetch(fullUrl, options);
   const data = await response.json();
 
   if (!response.ok) {
+    console.error(`Twitter API error [${response.status}]:`, JSON.stringify(data));
     throw new Error(`Twitter API [${response.status}]: ${JSON.stringify(data)}`);
   }
 
   return data;
 }
 
+// Cache user ID to avoid repeated /users/me calls
+let cachedUserId: string | null = null;
+
+async function getMyUserId(): Promise<string> {
+  if (cachedUserId) return cachedUserId;
+  const me = await twitterRequest("GET", "/users/me");
+  cachedUserId = me.data.id;
+  return cachedUserId;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 200,
-      headers: corsHeaders,
-    });
+    return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   try {
-    // Verify required env vars
-    const requiredVars = [
-      "TWITTER_CONSUMER_KEY",
-      "TWITTER_CONSUMER_SECRET",
-      "TWITTER_ACCESS_TOKEN",
-      "TWITTER_ACCESS_TOKEN_SECRET",
-    ];
-    for (const v of requiredVars) {
-      if (!Deno.env.get(v)) {
-        throw new Error(`Missing environment variable: ${v}`);
-      }
-    }
+    getCredentials(); // Validate early
 
     const { action, params } = await req.json();
-
     let result: unknown;
 
     switch (action) {
-      // ===== Auth: Verify credentials =====
       case "verify_credentials": {
         result = await twitterRequest("GET", "/users/me", undefined, {
-          "user.fields": "id,name,username,profile_image_url,public_metrics",
+          "user.fields": "id,name,username,profile_image_url,public_metrics,verified",
         });
         break;
       }
 
-      // ===== Like a tweet =====
       case "like": {
-        const meData = await twitterRequest("GET", "/users/me");
-        const userId = meData.data.id;
+        const userId = await getMyUserId();
         result = await twitterRequest("POST", `/users/${userId}/likes`, {
           tweet_id: params.tweetId,
         });
         break;
       }
 
-      // ===== Unlike a tweet =====
       case "unlike": {
-        const meUnlike = await twitterRequest("GET", "/users/me");
-        result = await twitterRequest(
-          "DELETE",
-          `/users/${meUnlike.data.id}/likes/${params.tweetId}`
-        );
+        const userId = await getMyUserId();
+        result = await twitterRequest("DELETE", `/users/${userId}/likes/${params.tweetId}`);
         break;
       }
 
-      // ===== Retweet =====
       case "retweet": {
-        const meRt = await twitterRequest("GET", "/users/me");
-        result = await twitterRequest("POST", `/users/${meRt.data.id}/retweets`, {
+        const userId = await getMyUserId();
+        result = await twitterRequest("POST", `/users/${userId}/retweets`, {
           tweet_id: params.tweetId,
         });
         break;
       }
 
-      // ===== Unretweet =====
       case "unretweet": {
-        const meUnrt = await twitterRequest("GET", "/users/me");
-        result = await twitterRequest(
-          "DELETE",
-          `/users/${meUnrt.data.id}/retweets/${params.tweetId}`
-        );
+        const userId = await getMyUserId();
+        result = await twitterRequest("DELETE", `/users/${userId}/retweets/${params.tweetId}`);
         break;
       }
 
-      // ===== Follow a user =====
       case "follow": {
-        const meFollow = await twitterRequest("GET", "/users/me");
-        // Get target user ID from username
-        const targetUser = await twitterRequest(
+        const userId = await getMyUserId();
+        const target = await twitterRequest(
           "GET",
-          `/users/by/username/${params.username.replace("@", "")}`
+          `/users/by/username/${params.username.replace("@", "")}`,
+          undefined,
+          { "user.fields": "id" }
         );
-        result = await twitterRequest(
-          "POST",
-          `/users/${meFollow.data.id}/following`,
-          { target_user_id: targetUser.data.id }
-        );
+        result = await twitterRequest("POST", `/users/${userId}/following`, {
+          target_user_id: target.data.id,
+        });
         break;
       }
 
-      // ===== Unfollow a user =====
       case "unfollow": {
-        const meUnfollow = await twitterRequest("GET", "/users/me");
-        const targetUnfollow = await twitterRequest(
+        const userId = await getMyUserId();
+        const targetU = await twitterRequest(
           "GET",
-          `/users/by/username/${params.username.replace("@", "")}`
+          `/users/by/username/${params.username.replace("@", "")}`,
+          undefined,
+          { "user.fields": "id" }
         );
-        result = await twitterRequest(
-          "DELETE",
-          `/users/${meUnfollow.data.id}/following/${targetUnfollow.data.id}`
-        );
+        result = await twitterRequest("DELETE", `/users/${userId}/following/${targetU.data.id}`);
         break;
       }
 
-      // ===== Post a tweet / reply =====
       case "tweet": {
         const tweetBody: Record<string, unknown> = { text: params.text };
         if (params.replyToId) {
@@ -215,94 +200,130 @@ Deno.serve(async (req: Request) => {
         break;
       }
 
-      // ===== Delete a tweet =====
       case "delete_tweet": {
         result = await twitterRequest("DELETE", `/tweets/${params.tweetId}`);
         break;
       }
 
-      // ===== Get user timeline =====
       case "get_timeline": {
-        const meTimeline = await twitterRequest("GET", "/users/me");
-        result = await twitterRequest(
-          "GET",
-          `/users/${meTimeline.data.id}/tweets`,
-          undefined,
-          {
-            max_results: (params.count || 10).toString(),
-            "tweet.fields": "created_at,public_metrics,text",
-          }
-        );
+        const userId = await getMyUserId();
+        result = await twitterRequest("GET", `/users/${userId}/tweets`, undefined, {
+          max_results: Math.min(Math.max(params.count || 10, 5), 100).toString(),
+          "tweet.fields": "created_at,public_metrics,text,author_id",
+        });
         break;
       }
 
-      // ===== Get user's followers =====
-      case "get_followers": {
-        const targetFollowers = params.username
-          ? await twitterRequest(
-              "GET",
-              `/users/by/username/${params.username.replace("@", "")}`
-            )
-          : await twitterRequest("GET", "/users/me");
-        result = await twitterRequest(
-          "GET",
-          `/users/${targetFollowers.data.id}/followers`,
-          undefined,
-          {
-            max_results: Math.min(params.count || 100, 1000).toString(),
-            "user.fields": "username,name,public_metrics,verified",
-          }
-        );
-        break;
-      }
-
-      // ===== Get user's following =====
-      case "get_following": {
-        const targetFollowing = params.username
-          ? await twitterRequest(
-              "GET",
-              `/users/by/username/${params.username.replace("@", "")}`
-            )
-          : await twitterRequest("GET", "/users/me");
-        result = await twitterRequest(
-          "GET",
-          `/users/${targetFollowing.data.id}/following`,
-          undefined,
-          {
-            max_results: Math.min(params.count || 100, 1000).toString(),
-            "user.fields": "username,name,public_metrics,verified",
-          }
-        );
-        break;
-      }
-
-      // ===== Search tweets =====
-      case "search_tweets": {
-        result = await twitterRequest(
-          "GET",
-          "/tweets/search/recent",
-          undefined,
-          {
-            query: params.query,
-            max_results: Math.min(params.count || 10, 100).toString(),
-            "tweet.fields": "created_at,public_metrics,author_id",
-          }
-        );
-        break;
-      }
-
-      // ===== Get home timeline (reverse chronological) =====
       case "get_home_timeline": {
-        const meHome = await twitterRequest("GET", "/users/me");
+        const userId = await getMyUserId();
         result = await twitterRequest(
           "GET",
-          `/users/${meHome.data.id}/reverse_chronological`,
+          `/users/${userId}/timelines/reverse_chronological`,
           undefined,
           {
-            max_results: Math.min(params.count || 20, 100).toString(),
-            "tweet.fields": "created_at,public_metrics,author_id",
+            max_results: Math.min(Math.max(params.count || 20, 1), 100).toString(),
+            "tweet.fields": "created_at,public_metrics,author_id,text",
           }
         );
+        break;
+      }
+
+      case "get_followers": {
+        let targetId: string;
+        if (params.username) {
+          const u = await twitterRequest(
+            "GET",
+            `/users/by/username/${params.username.replace("@", "")}`,
+            undefined,
+            { "user.fields": "id" }
+          );
+          targetId = u.data.id;
+        } else {
+          targetId = await getMyUserId();
+        }
+        result = await twitterRequest("GET", `/users/${targetId}/followers`, undefined, {
+          max_results: Math.min(Math.max(params.count || 100, 1), 1000).toString(),
+          "user.fields": "username,name,public_metrics,verified,profile_image_url",
+        });
+        break;
+      }
+
+      case "get_following": {
+        let targetId: string;
+        if (params.username) {
+          const u = await twitterRequest(
+            "GET",
+            `/users/by/username/${params.username.replace("@", "")}`,
+            undefined,
+            { "user.fields": "id" }
+          );
+          targetId = u.data.id;
+        } else {
+          targetId = await getMyUserId();
+        }
+        result = await twitterRequest("GET", `/users/${targetId}/following`, undefined, {
+          max_results: Math.min(Math.max(params.count || 100, 1), 1000).toString(),
+          "user.fields": "username,name,public_metrics,verified,profile_image_url",
+        });
+        break;
+      }
+
+      case "search_tweets": {
+        result = await twitterRequest("GET", "/tweets/search/recent", undefined, {
+          query: params.query,
+          max_results: Math.min(Math.max(params.count || 10, 10), 100).toString(),
+          "tweet.fields": "created_at,public_metrics,author_id,text",
+          expansions: "author_id",
+          "user.fields": "username,name,verified,profile_image_url",
+        });
+        break;
+      }
+
+      case "search_verified_users": {
+        // Blue Tick Hunter - search for tweets from verified accounts
+        const query = params.keyword
+          ? `${params.keyword} filter:verified`
+          : "filter:verified";
+        result = await twitterRequest("GET", "/tweets/search/recent", undefined, {
+          query,
+          max_results: Math.min(Math.max(params.count || 20, 10), 100).toString(),
+          "tweet.fields": "created_at,public_metrics,author_id,text",
+          expansions: "author_id",
+          "user.fields": "username,name,verified,public_metrics,profile_image_url",
+        });
+        break;
+      }
+
+      case "send_dm": {
+        // Direct Message via Twitter API v2
+        // First get target user ID
+        const targetDm = await twitterRequest(
+          "GET",
+          `/users/by/username/${params.username.replace("@", "")}`,
+          undefined,
+          { "user.fields": "id" }
+        );
+        result = await twitterRequest("POST", "/dm_conversations/with/" + targetDm.data.id + "/messages", {
+          text: params.text,
+        });
+        break;
+      }
+
+      case "get_user_by_username": {
+        result = await twitterRequest(
+          "GET",
+          `/users/by/username/${params.username.replace("@", "")}`,
+          undefined,
+          { "user.fields": "id,name,username,public_metrics,verified,profile_image_url,description" }
+        );
+        break;
+      }
+
+      case "follow_by_id": {
+        const userId = await getMyUserId();
+        result = await twitterRequest("POST", `/users/${userId}/following`, {
+          target_user_id: params.targetUserId,
+        });
         break;
       }
 
@@ -312,20 +333,14 @@ Deno.serve(async (req: Request) => {
 
     return new Response(JSON.stringify({ success: true, data: result }), {
       status: 200,
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/json",
-      },
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error: unknown) {
     console.error("Twitter API error:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
     return new Response(JSON.stringify({ success: false, error: message }), {
       status: 500,
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/json",
-      },
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
