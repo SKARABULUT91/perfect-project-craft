@@ -82,14 +82,21 @@ async function twitterRequest(
   const baseUrl = `${TWITTER_API}${endpoint}`;
   let fullUrl = baseUrl;
   if (queryParams && Object.keys(queryParams).length > 0) {
-    const qs = new URLSearchParams(queryParams).toString();
+    // Use encodeURIComponent for consistent encoding with OAuth signature
+    const qs = Object.keys(queryParams)
+      .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(queryParams[k])}`)
+      .join("&");
     fullUrl = `${baseUrl}?${qs}`;
   }
 
   const headers: Record<string, string> = {
     Authorization: await generateOAuthHeader(method, baseUrl, queryParams || {}),
-    "Content-Type": "application/json",
   };
+  
+  // Only set Content-Type for requests with body
+  if (body && method !== "GET") {
+    headers["Content-Type"] = "application/json";
+  }
 
   const options: RequestInit = { method, headers };
   if (body && method !== "GET") {
@@ -97,9 +104,6 @@ async function twitterRequest(
   }
 
   console.log(`Twitter API ${method} ${fullUrl}`);
-  console.log(`OAuth header prefix: ${headers.Authorization.substring(0, 50)}...`);
-  console.log(`Consumer key starts with: ${Deno.env.get("TWITTER_CONSUMER_KEY")?.substring(0, 5)}...`);
-  console.log(`Access token starts with: ${Deno.env.get("TWITTER_ACCESS_TOKEN")?.substring(0, 5)}...`);
   const response = await fetch(fullUrl, options);
   const data = await response.json();
 
