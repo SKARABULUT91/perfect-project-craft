@@ -97,6 +97,9 @@ async function twitterRequest(
   }
 
   console.log(`Twitter API ${method} ${fullUrl}`);
+  console.log(`OAuth header prefix: ${headers.Authorization.substring(0, 50)}...`);
+  console.log(`Consumer key starts with: ${Deno.env.get("TWITTER_CONSUMER_KEY")?.substring(0, 5)}...`);
+  console.log(`Access token starts with: ${Deno.env.get("TWITTER_ACCESS_TOKEN")?.substring(0, 5)}...`);
   const response = await fetch(fullUrl, options);
   const data = await response.json();
 
