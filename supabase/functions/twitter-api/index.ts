@@ -53,8 +53,6 @@ async function generateOAuthHeader(
   const baseString = `${method.toUpperCase()}&${encodeURIComponent(baseUrl)}&${encodeURIComponent(paramString)}`;
   const signingKey = `${encodeURIComponent(consumerSecret)}&${encodeURIComponent(accessTokenSecret)}`;
 
-  console.log("OAuth base string:", baseString.substring(0, 200));
-  console.log("Signing key length:", signingKey.length);
 
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
