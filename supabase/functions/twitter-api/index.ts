@@ -53,6 +53,9 @@ async function generateOAuthHeader(
   const baseString = `${method.toUpperCase()}&${encodeURIComponent(baseUrl)}&${encodeURIComponent(paramString)}`;
   const signingKey = `${encodeURIComponent(consumerSecret)}&${encodeURIComponent(accessTokenSecret)}`;
 
+  console.log("OAuth base string:", baseString.substring(0, 200));
+  console.log("Signing key length:", signingKey.length);
+
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     "raw",
@@ -62,7 +65,13 @@ async function generateOAuthHeader(
     ["sign"]
   );
   const signatureBytes = await crypto.subtle.sign("HMAC", key, encoder.encode(baseString));
-  const signature = btoa(String.fromCharCode(...new Uint8Array(signatureBytes)));
+  const byteArray = new Uint8Array(signatureBytes);
+  // Use manual base64 encoding to avoid spread issues
+  let binary = "";
+  for (let i = 0; i < byteArray.length; i++) {
+    binary += String.fromCharCode(byteArray[i]);
+  }
+  const signature = btoa(binary);
 
   const authParams = { ...oauthParams, oauth_signature: signature };
   const header = Object.keys(authParams)
