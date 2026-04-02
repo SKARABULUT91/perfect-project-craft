@@ -43,6 +43,10 @@ export default function HomePage() {
       addLog(`✅ @${user.username} hesabı başarıyla bağlandı. (${user.public_metrics?.followers_count || 0} takipçi)`, 'success');
     } else {
       addLog(`❌ Bağlantı hatası: ${result.error || 'Bilinmeyen hata'}`, 'error');
+      if (result.error?.includes('401')) {
+        addLog('⚠️ API anahtarları geçersiz veya süresi dolmuş. Twitter Developer Portal\'dan doğru anahtarları kontrol edin.', 'error');
+        addLog('💡 İpucu: App permissions "Read and Write" olmalı. Anahtarları yenilediyseniz buradan güncelleyin.', 'info');
+      }
     }
 
     setIsLoggingIn(false);

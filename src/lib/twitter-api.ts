@@ -26,6 +26,7 @@ export interface TwitterUser {
   name: string;
   username: string;
   profile_image_url?: string;
+  description?: string;
   public_metrics?: {
     followers_count: number;
     following_count: number;
@@ -46,9 +47,20 @@ export interface TwitterTweet {
   author_id?: string;
 }
 
+export interface TwitterSearchResult {
+  data: TwitterTweet[];
+  includes?: {
+    users?: TwitterUser[];
+  };
+}
+
 // ===== Auth =====
 export async function verifyCredentials() {
   return callTwitterApi<{ data: TwitterUser }>("verify_credentials");
+}
+
+export async function verifyCredentialsFull() {
+  return callTwitterApi<{ data: TwitterUser }>("verify_credentials_full");
 }
 
 // ===== Actions =====
@@ -70,6 +82,10 @@ export async function unretweetTweet(tweetId: string) {
 
 export async function followUser(username: string) {
   return callTwitterApi("follow", { username });
+}
+
+export async function followUserById(targetUserId: string) {
+  return callTwitterApi("follow_by_id", { targetUserId });
 }
 
 export async function unfollowUser(username: string) {
@@ -98,9 +114,24 @@ export async function getFollowing(username?: string, count = 100) {
 }
 
 export async function searchTweets(query: string, count = 10) {
-  return callTwitterApi<{ data: TwitterTweet[] }>("search_tweets", { query, count });
+  return callTwitterApi<TwitterSearchResult>("search_tweets", { query, count });
 }
 
 export async function getHomeTimeline(count = 20) {
   return callTwitterApi<{ data: TwitterTweet[] }>("get_home_timeline", { count });
+}
+
+// ===== Blue Tick Hunter =====
+export async function searchVerifiedUsers(keyword: string, count = 20) {
+  return callTwitterApi<TwitterSearchResult>("search_verified_users", { keyword, count });
+}
+
+// ===== DM =====
+export async function sendDM(username: string, text: string) {
+  return callTwitterApi("send_dm", { username, text });
+}
+
+// ===== User Lookup =====
+export async function getUserByUsername(username: string) {
+  return callTwitterApi<{ data: TwitterUser }>("get_user_by_username", { username });
 }
