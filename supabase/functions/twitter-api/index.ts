@@ -10,12 +10,12 @@ const corsHeaders = {
 const TWITTER_API = "https://api.x.com/2";
 
 function getCredentials() {
-  const consumerKey = Deno.env.get("TWITTER_CONSUMER_KEY");
-  const consumerSecret = Deno.env.get("TWITTER_CONSUMER_SECRET");
-  const accessToken = Deno.env.get("TWITTER_ACCESS_TOKEN");
-  const accessTokenSecret = Deno.env.get("TWITTER_ACCESS_TOKEN_SECRET");
+  const consumerKey = Deno.env.get("TWITTER_CONSUMER_KEY")?.trim();
+  const consumerSecret = Deno.env.get("TWITTER_CONSUMER_SECRET")?.trim();
+  const accessToken = Deno.env.get("TWITTER_ACCESS_TOKEN")?.trim();
+  const accessTokenSecret = Deno.env.get("TWITTER_ACCESS_TOKEN_SECRET")?.trim();
   if (!consumerKey || !consumerSecret || !accessToken || !accessTokenSecret) {
-    throw new Error("Twitter API credentials not configured");
+    throw new Error("Twitter API credentials not configured. Please set TWITTER_CONSUMER_KEY, TWITTER_CONSUMER_SECRET, TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_TOKEN_SECRET");
   }
   return { consumerKey, consumerSecret, accessToken, accessTokenSecret };
 }
