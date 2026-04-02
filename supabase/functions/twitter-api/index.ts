@@ -138,6 +138,11 @@ Deno.serve(async (req: Request) => {
 
     switch (action) {
       case "verify_credentials": {
+        result = await twitterRequest("GET", "/users/me");
+        break;
+      }
+
+      case "verify_credentials_full": {
         result = await twitterRequest("GET", "/users/me", undefined, {
           "user.fields": "id,name,username,profile_image_url,public_metrics,verified",
         });
