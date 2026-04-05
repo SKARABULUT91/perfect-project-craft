@@ -4,25 +4,29 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import { Plus, Trash2, Shield, Wifi, User } from 'lucide-react';
+import { Plus, Trash2, Shield, Wifi, User, Globe } from 'lucide-react';
 import type { TwitterAccount } from '@/lib/types';
+import { loginAccount, checkSession } from '@/lib/api-client';
 
 export default function AccountsPage() {
-  const { accounts, addAccount, removeAccount, updateAccount, setActiveAccount, addLog } = useStore();
+  const { accounts, addAccount, removeAccount, updateAccount, setActiveAccount, addLog, twitterCredentials } = useStore();
   const [showAdd, setShowAdd] = useState(false);
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [new2FA, setNew2FA] = useState('');
   const [newProxy, setNewProxy] = useState('');
+  const [newUserAgent, setNewUserAgent] = useState('');
+  const [testingId, setTestingId] = useState<string | null>(null);
 
   const handleAdd = () => {
-    if (!newUsername.trim()) return;
+    if (!newUsername.trim() || !newPassword.trim()) return;
     const account: TwitterAccount = {
       id: crypto.randomUUID(),
-      username: newUsername.trim(),
+      username: newUsername.trim().replace('@', ''),
       password: newPassword,
       twoFASecret: new2FA,
       proxy: newProxy,
+      userAgent: newUserAgent,
       isActive: accounts.length === 0,
       status: 'idle',
     };
@@ -32,7 +36,24 @@ export default function AccountsPage() {
     setNewPassword('');
     setNew2FA('');
     setNewProxy('');
+    setNewUserAgent('');
     setShowAdd(false);
+  };
+
+  const handleTestLogin = async (acc: TwitterAccount) => {
+    setTestingId(acc.id);
+    addLog(`@${acc.username} giriş testi yapılıyor...`, 'info');
+    
+    const result = await loginAccount(acc.username, acc.password, acc.twoFASecret || undefined, acc.proxy || undefined, acc.userAgent || undefined);
+    
+    if (result.success) {
+      updateAccount(acc.id, { status: 'running' });
+      addLog(`✅ @${acc.username} giriş başarılı! Oturum aktif.`, 'success');
+    } else {
+      updateAccount(acc.id, { status: 'error' });
+      addLog(`❌ @${acc.username} giriş hatası: ${result.error}`, 'error');
+    }
+    setTestingId(null);
   };
 
   const statusColors: Record<string, string> = {
@@ -52,7 +73,7 @@ export default function AccountsPage() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <p className="text-sm text-muted-foreground">Birden fazla Twitter hesabını yönetin ve kampanyalarınızda kullanın.</p>
+        <p className="text-sm text-muted-foreground">Twikit ile giriş — API anahtarı gereksiz. Kullanıcı adı + şifre yeterli.</p>
         <Button onClick={() => setShowAdd(!showAdd)} size="sm">
           <Plus className="w-4 h-4 mr-1.5" /> Hesap Ekle
         </Button>
@@ -76,11 +97,15 @@ export default function AccountsPage() {
             </div>
             <div>
               <Label>Proxy (Opsiyonel)</Label>
-              <Input placeholder="http://ip:port" value={newProxy} onChange={(e) => setNewProxy(e.target.value)} />
+              <Input placeholder="http://user:pass@ip:port" value={newProxy} onChange={(e) => setNewProxy(e.target.value)} />
+            </div>
+            <div className="sm:col-span-2">
+              <Label>User-Agent (Opsiyonel — Boş bırakılırsa otomatik atanır)</Label>
+              <Input placeholder="Mozilla/5.0 (Windows NT 10.0; ...)" value={newUserAgent} onChange={(e) => setNewUserAgent(e.target.value)} />
             </div>
           </div>
           <div className="flex gap-2">
-            <Button onClick={handleAdd} disabled={!newUsername.trim()}>Kaydet</Button>
+            <Button onClick={handleAdd} disabled={!newUsername.trim() || !newPassword.trim()}>Kaydet</Button>
             <Button variant="outline" onClick={() => setShowAdd(false)}>İptal</Button>
           </div>
         </div>
@@ -122,7 +147,10 @@ export default function AccountsPage() {
                   <div className="flex items-center gap-1.5"><Shield className="w-3 h-3 text-success" /> 2FA Aktif</div>
                 )}
                 {acc.proxy && (
-                  <div className="flex items-center gap-1.5"><Wifi className="w-3 h-3 text-warning" /> Proxy: {acc.proxy}</div>
+                  <div className="flex items-center gap-1.5"><Wifi className="w-3 h-3 text-warning" /> Proxy: {acc.proxy.slice(0, 30)}...</div>
+                )}
+                {acc.userAgent && (
+                  <div className="flex items-center gap-1.5"><Globe className="w-3 h-3 text-primary" /> Özel User-Agent</div>
                 )}
               </div>
 
@@ -135,6 +163,15 @@ export default function AccountsPage() {
                     Aktif Yap
                   </Button>
                 )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs flex-1"
+                  onClick={() => handleTestLogin(acc)}
+                  disabled={testingId === acc.id}
+                >
+                  {testingId === acc.id ? '⏳ Test...' : '🔑 Giriş Test'}
+                </Button>
                 <Button
                   size="sm"
                   variant="outline"
@@ -153,12 +190,12 @@ export default function AccountsPage() {
       )}
 
       <div className="bg-card border border-border rounded-lg p-5">
-        <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">🛡️ Hesap Güvenliği İpuçları</div>
+        <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">🛡️ Güvenlik İpuçları</div>
         <ul className="text-xs text-muted-foreground space-y-1.5">
-          <li>• Her hesap için farklı proxy kullanarak IP rotasyonu sağlayın.</li>
-          <li>• 2FA gizli anahtarınızı ekleyerek otomatik doğrulama yapabilirsiniz.</li>
-          <li>• Saatlik oran limitini (Ayarlar) aşmamaya dikkat edin.</li>
-          <li>• Engellenen hesapları hemen devre dışı bırakın.</li>
+          <li>• Her hesap için farklı <strong>Residential Proxy</strong> kullanın (datacenter proxy ban sebebi).</li>
+          <li>• 2FA gizli anahtarını ekleyerek otomatik TOTP doğrulaması yapın.</li>
+          <li>• Her hesaba farklı User-Agent atayarak cihaz çeşitliliği sağlayın.</li>
+          <li>• Oturumlar çerez dosyası olarak backend'de saklanır — her seferinde giriş gerekmez.</li>
         </ul>
       </div>
     </div>
