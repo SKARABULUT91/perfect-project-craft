@@ -1,3 +1,37 @@
+import subprocess
+import sys
+import os
+
+# --- ENJEKTE EDİLEN KURULUM BLOĞU BAŞI ---
+def initialize_vps():
+    print("VPS ortamı kontrol ediliyor...")
+    # 1. Gerekli kütüphaneleri kontrol et ve kur
+    required_libs = ["fastapi", "uvicorn", "twikit", "playwright", "pydantic"]
+    for lib in:
+        try:
+            __import__(lib)
+        except ImportError:
+            print(f"Eksik paket kuruluyor: {lib}")
+            subprocess.check_call([sys.executable, "-m", "pip", "install", lib])
+
+    # 2. Playwright ve tarayıcı bağımlılıklarını enjekte et
+    # Bu komut özellikle Linux VPS'lerdeki eksik sistem kütüphanelerini tamamlar
+    try:
+        # Tarayıcı motorunu kur
+        subprocess.run(["playwright", "install", "chromium"], check=True)
+        # Sistem bağımlılıklarını kur (sudo gerektirebilir, VPS'de root isen sorun olmaz)
+        subprocess.run(["playwright", "install-deps", "chromium"], check=True)
+    except Exception as e:
+        print(f"Playwright kurulumunda uyarı: {e}")
+
+# Uygulama daha başlamadan kurulumu tetikle
+initialize_vps()
+# --- ENJEKTE EDİLEN KURULUM BLOĞU SONU ---
+
+# Şimdi normal importlarına ve FastAPI kodlarına devam edebilirsin
+from fastapi import FastAPI
+# ... geri kalan kodların
+
 """
 X-KODCUM Backend - Twikit + Playwright tabanlı otomasyon sunucusu
 VPS/Local sunucuda çalıştırılacak FastAPI uygulaması
