@@ -10,6 +10,7 @@ export interface TwitterAccount {
   password: string;
   twoFASecret: string;
   proxy: string;
+  userAgent?: string;
   isActive: boolean;
   status: 'idle' | 'running' | 'error' | 'banned';
 }
