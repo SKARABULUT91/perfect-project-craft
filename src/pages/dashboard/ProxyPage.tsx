@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { Plus, Trash2, Wifi, RefreshCw } from 'lucide-react';
 import type { ProxyItem } from '@/lib/types';
+import { testProxy } from '@/lib/api-client';
 
 export default function ProxyPage() {
   const { proxies, addProxy, removeProxy, updateProxy, addLog } = useStore();
@@ -59,14 +60,18 @@ export default function ProxyPage() {
     setBulkList('');
   };
 
-  const handleTest = (proxy: ProxyItem) => {
+  const handleTest = async (proxy: ProxyItem) => {
     updateProxy(proxy.id, { status: 'testing' });
-    addLog(`Proxy test ediliyor: ${proxy.address}:${proxy.port}`, 'info');
-    setTimeout(() => {
-      const alive = Math.random() > 0.3;
-      updateProxy(proxy.id, { status: alive ? 'active' : 'dead' });
-      addLog(`Proxy ${proxy.address}:${proxy.port} — ${alive ? 'Aktif ✓' : 'Ölü ✗'}`, alive ? 'success' : 'error');
-    }, 1500);
+    addLog(`Proxy test ediliyor: ${proxy.address}:${proxy.port} (backend üzerinden)`, 'info');
+
+    const result = await testProxy(proxy.address, proxy.port, proxy.type, proxy.username, proxy.password);
+    if (result.success && result.data?.alive) {
+      updateProxy(proxy.id, { status: 'active' });
+      addLog(`✅ Proxy ${proxy.address}:${proxy.port} — Aktif (${result.data.latency_ms}ms)`, 'success');
+    } else {
+      updateProxy(proxy.id, { status: 'dead' });
+      addLog(`❌ Proxy ${proxy.address}:${proxy.port} — Ölü`, 'error');
+    }
   };
 
   const statusConfig: Record<string, { label: string; class: string }> = {
@@ -77,7 +82,7 @@ export default function ProxyPage() {
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-muted-foreground">IP rotasyonu için proxy listesi tanımlayın.</p>
+      <p className="text-sm text-muted-foreground">IP rotasyonu için proxy listesi tanımlayın. Test backend üzerinden gerçek bağlantı kontrolü yapar.</p>
 
       <div className="bg-card border border-border rounded-lg p-5">
         <div className="flex gap-2 mb-4">
@@ -88,14 +93,8 @@ export default function ProxyPage() {
         {mode === 'manual' ? (
           <div className="space-y-3">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div>
-                <Label>IP Adresi</Label>
-                <Input placeholder="192.168.1.1" value={address} onChange={(e) => setAddress(e.target.value)} />
-              </div>
-              <div>
-                <Label>Port</Label>
-                <Input placeholder="8080" value={port} onChange={(e) => setPort(e.target.value)} />
-              </div>
+              <div><Label>IP Adresi</Label><Input placeholder="192.168.1.1" value={address} onChange={(e) => setAddress(e.target.value)} /></div>
+              <div><Label>Port</Label><Input placeholder="8080" value={port} onChange={(e) => setPort(e.target.value)} /></div>
               <div>
                 <Label>Tip</Label>
                 <select value={proxyType} onChange={(e) => setProxyType(e.target.value as 'http' | 'socks5')} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
@@ -103,26 +102,16 @@ export default function ProxyPage() {
                   <option value="socks5">SOCKS5</option>
                 </select>
               </div>
-              <div className="flex items-end">
-                <Button className="w-full" onClick={handleAdd} disabled={!address.trim() || !port.trim()}>
-                  <Plus className="w-4 h-4 mr-1" /> Ekle
-                </Button>
-              </div>
+              <div className="flex items-end"><Button className="w-full" onClick={handleAdd} disabled={!address.trim() || !port.trim()}><Plus className="w-4 h-4 mr-1" /> Ekle</Button></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Kullanıcı Adı (Opsiyonel)</Label>
-                <Input placeholder="user" value={proxyUser} onChange={(e) => setProxyUser(e.target.value)} />
-              </div>
-              <div>
-                <Label>Şifre (Opsiyonel)</Label>
-                <Input type="password" placeholder="••••" value={proxyPass} onChange={(e) => setProxyPass(e.target.value)} />
-              </div>
+              <div><Label>Kullanıcı Adı (Opsiyonel)</Label><Input placeholder="user" value={proxyUser} onChange={(e) => setProxyUser(e.target.value)} /></div>
+              <div><Label>Şifre (Opsiyonel)</Label><Input type="password" placeholder="••••" value={proxyPass} onChange={(e) => setProxyPass(e.target.value)} /></div>
             </div>
           </div>
         ) : (
           <div className="space-y-3">
-            <Label>Proxy Listesi (ip:port:user:pass formatında, her satıra bir tane)</Label>
+            <Label>Proxy Listesi (ip:port:user:pass formatında)</Label>
             <Textarea placeholder="192.168.1.1:8080:user:pass\n10.0.0.1:3128" value={bulkList} onChange={(e) => setBulkList(e.target.value)} className="h-[120px] font-mono text-xs" />
             <Button onClick={handleBulkAdd} disabled={!bulkList.trim()}>Toplu Ekle</Button>
           </div>
@@ -155,19 +144,11 @@ export default function ProxyPage() {
                     <td className="p-3 font-mono text-xs text-foreground">{p.port}</td>
                     <td className="p-3 text-xs uppercase text-muted-foreground">{p.type}</td>
                     <td className="p-3 text-xs text-muted-foreground">{p.username ? '✓' : '—'}</td>
-                    <td className="p-3">
-                      <span className={cn('text-[10px] font-medium px-2 py-0.5 rounded-full', statusConfig[p.status].class)}>
-                        {statusConfig[p.status].label}
-                      </span>
-                    </td>
+                    <td className="p-3"><span className={cn('text-[10px] font-medium px-2 py-0.5 rounded-full', statusConfig[p.status].class)}>{statusConfig[p.status].label}</span></td>
                     <td className="p-3 text-right">
                       <div className="flex gap-1 justify-end">
-                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => handleTest(p)}>
-                          <RefreshCw className={cn('w-3 h-3', p.status === 'testing' && 'animate-spin')} />
-                        </Button>
-                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive" onClick={() => removeProxy(p.id)}>
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => handleTest(p)}><RefreshCw className={cn('w-3 h-3', p.status === 'testing' && 'animate-spin')} /></Button>
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive" onClick={() => removeProxy(p.id)}><Trash2 className="w-3 h-3" /></Button>
                       </div>
                     </td>
                   </tr>
@@ -177,9 +158,7 @@ export default function ProxyPage() {
           </div>
           <div className="p-3 border-t border-border flex justify-between items-center">
             <span className="text-xs text-muted-foreground">{proxies.length} proxy • {proxies.filter((p) => p.status === 'active').length} aktif</span>
-            <Button size="sm" variant="secondary" className="text-xs" onClick={() => proxies.forEach((p) => handleTest(p))}>
-              Tümünü Test Et
-            </Button>
+            <Button size="sm" variant="secondary" className="text-xs" onClick={() => proxies.forEach((p) => handleTest(p))}>Tümünü Test Et</Button>
           </div>
         </div>
       )}
